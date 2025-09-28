@@ -1,44 +1,72 @@
 name: rg-connectivity-001
+
 on:
   push:
     paths:
       - '*.tf'
   workflow_dispatch:
-     inputs:
+    inputs:
       ResourceGroupName:
         description: "Resource Group Name"
-        type: "string"
+        type: string
+        required: true
       VirtualNetworkName:
         description: "Virtual Network Name"
-        type: "string"
+        type: string
+        required: true
       Location:
-        description: "Location"
-        type: "string"  
+        description: "Azure Location"
+        type: string
+        default: eastus
+        required: true
       action:
-        description: "Action to perform like apply or destroy"
-        type: "string"   
+        description: "Terraform action (apply or destroy)"
+        type: choice
+        options:
+          - apply
+          - destroy
+        default: apply
+
 jobs:
   resourcegroups:
     runs-on: ubuntu-latest
     name: 'rg-connectivity-001'
     env:
+      NODE_OPTIONS: --no-node-snapshot
       ARM_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
       ARM_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
       ARM_SUBSCRIPTION_ID: ${{ secrets.SUBSCRIPTION_ID }}
       ARM_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
-    steps:
-      - uses: actions/checkout@main
-      - name: 'Terraform init'
-        id: init
-        run: |
-          terraform init          
 
-      - name: 'Terraform plan'
-        id: plan
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.1.5   # or the version you require
+
+      - name: Terraform Init
+        run: terraform init
+
+      - name: Terraform Plan
         run: |
-          terraform plan -var rg_name=${{ github.event.inputs.ResourceGroupName }} -var rg_location=${{ github.event.inputs.Location }} -var vnetname=${{ github.event.inputs.VirtualNetworkName }}
-                    
-      - name: 'Terraform apply'
-        id: apply
+          terraform plan \
+            -var rg_name=${{ github.event.inputs.ResourceGroupName || 'default-rg' }} \
+            -var rg_location=${{ github.event.inputs.Location || 'eastus' }} \
+            -var vnetname=${{ github.event.inputs.VirtualNetworkName || 'default-vnet' }}
+
+      - name: Terraform Apply/Destroy
+        if: ${{ github.event_name == 'workflow_dispatch' }}
         run: |
-          terraform ${{ github.event.inputs.action }} -var rg_name=${{ github.event.inputs.ResourceGroupName }} -var rg_location=${{ github.event.inputs.Location }} -var vnetname=${{ github.event.inputs.VirtualNetworkName }} -auto-approve     
+          terraform ${{ github.event.inputs.action }} \
+            -var rg_name=${{ github.event.inputs.ResourceGroupName }} \
+            -var rg_location=${{ github.event.inputs.Location }} \
+            -var vnetname=${{ github.event.inputs.VirtualNetworkName }} \
+            -auto-approve
